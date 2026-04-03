@@ -3,10 +3,29 @@ import path from "path";
 import TOML from "@iarna/toml";
 import { checkDir, isValidTag, repoExists } from "./utils/checks";
 import { getFilesToCopy, copyFiles } from "./utils/files";
-import { run, getLatestTag } from "./utils/git";
+import { getLatestTag } from "./utils/git";
+import { execSync } from "child_process";
+
+let verbose = false;
+
+export function activateVerbose() {
+  verbose = true;
+}
+
+function run(command: string) {
+  if (verbose) console.log(` > ${command}`);
+  execSync(command, { stdio: "ignore" });
+}
+
+function vlog(message: string) {
+  if (!verbose) return;
+
+  console.log(message);
+}
 
 export function vaultyInit() {
   fs.writeFileSync(path.join(process.cwd(), "vaulty.toml"), `[dependencies]\n`);
+  console.log("Vaulty project initialized.");
 }
 
 export function addPackage(name: string, repo: string, tag: string) {
@@ -16,7 +35,7 @@ export function addPackage(name: string, repo: string, tag: string) {
   config.dependencies ||= {};
   config.dependencies[name] = `${repo}@${tag}`;
   fs.writeFileSync(configPath, TOML.stringify(config));
-  console.log(`Added ${repo}@${tag}`);
+  console.log(`Added  ${name} (${repo}@${tag})`);
 }
 
 export function removePackage(name: string) {
@@ -34,7 +53,10 @@ export function removePackage(name: string) {
 
 export function installPackages() {
   checkDir();
+
+  vlog("\nInstalling wally dependencies");
   run("wally install");
+  vlog("Installed wally dependencies");
 
   const vaultyConfigPath = path.join(process.cwd(), "vaulty.toml");
   const vaultyConfig: any = TOML.parse(
@@ -42,13 +64,18 @@ export function installPackages() {
   );
   const deps = vaultyConfig.dependencies ?? {};
 
+  vlog("Installing vaulty depencies");
   for (const [name, value] of Object.entries(deps) as [string, string][]) {
     installPackage(name, value);
   }
+
+  console.log("\n All packages installed.");
 }
 
 function installPackage(name: string, value: string) {
   let [repo, tag] = value.split("@");
+
+  vlog(`\nStarting ${name} installing process`);
 
   validateRepo(repo);
   tag = resolveTag(repo, tag);
@@ -62,11 +89,15 @@ function installPackage(name: string, value: string) {
     name,
   );
 
+  vlog(`Cloning ${name} github repository (${value})`);
+
   const tempDir = cloneDir + "-";
   run(
-    `git clone --branch v${tag} --depth 1 https://github.com/${repo} ${tempDir}`,
+    `git clone --branch v${tag} --depth 1 https://github.com/${repo} "${tempDir}"`,
   );
   if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true });
+
+  vlog(`Filtering ${name} files`);
 
   const wallyPath = path.join(tempDir, "wally.toml");
   if (!fs.existsSync(wallyPath))
@@ -84,11 +115,14 @@ function installPackage(name: string, value: string) {
   if (!fs.existsSync(projDir))
     throw new Error(`No default.project.json found in ${cloneDir}`);
 
+  vlog(`Writing ${name} alias script`);
+
   fs.writeFileSync(
     path.join(process.cwd(), "Packages", `${name}.lua`),
     `return require(script.Parent._Index["${userName}_${repoName}@${tag}"]["${name}"])\n`,
   );
 
+  vlog(`Done installing ${name}`);
   console.log(`Installed ${repo}@${tag}`);
 }
 

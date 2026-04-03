@@ -1,9 +1,5 @@
 import { execSync } from "child_process";
 
-export function run(command: string, ignoreOutput = true) {
-  execSync(command, { stdio: ignoreOutput ? "ignore" : "inherit" });
-}
-
 export function getLatestTag(repo: string): string | null {
   try {
     const output = execSync(

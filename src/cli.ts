@@ -1,6 +1,7 @@
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import {
+  activateVerbose,
   addPackage,
   installPackages,
   removePackage,
@@ -26,13 +27,25 @@ yargs(hideBin(process.argv))
   .demandCommand()
   .help()
 
+  .option("verbose", {
+    alias: "v",
+    type: "boolean",
+    description: "Enable verbose logging",
+    default: false,
+  })
+
+  .middleware((argv) => {
+    if (argv.verbose) {
+      activateVerbose();
+    }
+  })
+
   .command(
     "init",
     "Initialize a new vaulty project",
     () => {},
     async () => {
       vaultyInit();
-      console.log("Vaulty project initialized.");
     },
   )
 
@@ -51,7 +64,6 @@ yargs(hideBin(process.argv))
       try {
         const { repo, tag } = parsePackage(argv.package);
         await addPackage(argv.name, repo, tag);
-        console.log(`Added ${argv.name} from ${repo}@${tag}`);
       } catch (err: any) {
         console.error(err.message);
         process.exit(1);
@@ -68,7 +80,6 @@ yargs(hideBin(process.argv))
     async (argv: any) => {
       try {
         await removePackage(argv.name);
-        console.log(`Removed package ${argv.name}`);
       } catch (err: any) {
         console.error(err.message);
         process.exit(1);
@@ -83,7 +94,6 @@ yargs(hideBin(process.argv))
     async () => {
       try {
         await installPackages();
-        console.log("All packages installed.");
       } catch (err: any) {
         console.error(err.message);
         process.exit(1);
