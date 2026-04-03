@@ -1,0 +1,26 @@
+{
+  "name": "vaulty",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "start": "node ./dist/index.js"
+  },
+  "bin": {
+    "vaulty": "./dist/index.js"
+  },
+  "keywords": [],
+  "author": "Cogu ( @thecogumeta )",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "glob": "^13.0.6",
+    "simple-git": "^3.33.0",
+    "yargs": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/yargs": "^17.0.35",
+    "typescript": "^6.0.2"
+  }
+}
