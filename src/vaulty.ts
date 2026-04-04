@@ -148,9 +148,10 @@ function installPackage(name: string, value: string, scope: Scope) {
     `return require(script.Parent._Index["${userName}_${repoName}@${tag}"]["${name}"])\n`,
   );
 
+  const tsRedirectImportPath = `./_Index/${userName}_${repoName}@${tag}/${name}/${projInfo.tree["$path"]}`;
   fs.writeFileSync(
     path.join(process.cwd(), pkgFolder, `${name}.d.ts`),
-    `import * as lib from "./_Index/${userName}_${repoName}@${tag}/${name}/${projInfo.tree["$path"]}";\nexport = lib;\n`,
+    `export * from "${tsRedirectImportPath}";\nexport { default } from "${tsRedirectImportPath}";\n`,
   );
 
   vlog(`Done installing ${name}`);
