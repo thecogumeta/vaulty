@@ -139,12 +139,18 @@ function installPackage(name: string, value: string, scope: Scope) {
   const projDir = path.join(cloneDir, "default.project.json");
   if (!fs.existsSync(projDir))
     throw new Error(`No default.project.json found in ${cloneDir}`);
+  const projInfo: any = JSON.parse(fs.readFileSync(projDir, "utf-8"));
 
-  vlog(`Writing ${name} alias script`);
+  vlog(`Writing ${name} alias scripts`);
 
   fs.writeFileSync(
     path.join(process.cwd(), pkgFolder, `${name}.lua`),
     `return require(script.Parent._Index["${userName}_${repoName}@${tag}"]["${name}"])\n`,
+  );
+
+  fs.writeFileSync(
+    path.join(process.cwd(), pkgFolder, `${name}.d.ts`),
+    `import * as lib from "./_Index/${userName}_${repoName}@${tag}/${name}/${projInfo.tree["$path"]}";\nexport = lib;\n`,
   );
 
   vlog(`Done installing ${name}`);
