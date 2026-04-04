@@ -7,10 +7,12 @@ import {
   removePackage,
   vaultyInit,
 } from "./vaulty";
+import { Scope } from "./utils/scope";
 
 interface AddArgs {
   name: string;
   package: string;
+  scope: Scope;
 }
 
 function parsePackage(pkg: string) {
@@ -58,12 +60,19 @@ yargs(hideBin(process.argv))
         .positional("package", {
           type: "string",
           describe: "GitHub repository (user/repo@tag)",
+        })
+        .option("scope", {
+          alias: "s",
+          type: "string",
+          describe: "Scope to add the package",
+          choices: ["dev", "client", "server", "shared"],
+          default: "shared",
         });
     },
     async (argv) => {
       try {
         const { repo, tag } = parsePackage(argv.package);
-        await addPackage(argv.name, repo, tag);
+        await addPackage(argv.name, repo, tag, argv.scope as any);
       } catch (err: any) {
         console.error(err.message);
         process.exit(1);
@@ -75,11 +84,19 @@ yargs(hideBin(process.argv))
     "remove <name>",
     "Remove a package from Git",
     (yargs) => {
-      yargs.positional("name", { type: "string", describe: "Package name" });
+      yargs
+        .positional("name", { type: "string", describe: "Package name" })
+        .option("scope", {
+          alias: "s",
+          type: "string",
+          describe: "Scope to add the package",
+          choices: ["dev", "client", "server", "shared"],
+          default: "shared",
+        });
     },
     async (argv: any) => {
       try {
-        await removePackage(argv.name);
+        await removePackage(argv.name, argv.scope);
       } catch (err: any) {
         console.error(err.message);
         process.exit(1);

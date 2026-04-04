@@ -5,6 +5,12 @@ import { checkDir, isValidTag, repoExists } from "./utils/checks";
 import { getFilesToCopy, copyFiles } from "./utils/files";
 import { getLatestTag } from "./utils/git";
 import { execSync } from "child_process";
+import {
+  getScopeFolderPrefix,
+  getScopeLogName,
+  getScopeTomlSection,
+  Scope,
+} from "./utils/scope";
 
 let verbose = false;
 
@@ -28,24 +34,34 @@ export function vaultyInit() {
   console.log("Vaulty project initialized.");
 }
 
-export function addPackage(name: string, repo: string, tag: string) {
+export function addPackage(
+  name: string,
+  repo: string,
+  tag: string,
+  scope: Scope,
+) {
   checkDir();
+
+  const tomlSection = getScopeTomlSection(scope);
   const configPath = path.join(process.cwd(), "vaulty.toml");
   const config: any = TOML.parse(fs.readFileSync(configPath, "utf-8"));
-  config.dependencies ||= {};
-  config.dependencies[name] = `${repo}@${tag}`;
+
+  config[tomlSection] ||= {};
+  config[tomlSection][name] = `${repo}@${tag}`;
   fs.writeFileSync(configPath, TOML.stringify(config));
-  console.log(`Added  ${name} (${repo}@${tag})`);
+  console.log(`Added  ${name} (${repo}@${tag}) to ${getScopeLogName(scope)}`);
 }
 
-export function removePackage(name: string) {
+export function removePackage(name: string, scope: Scope) {
   checkDir();
   const configPath = path.join(process.cwd(), "vaulty.toml");
   const config: any = TOML.parse(fs.readFileSync(configPath, "utf-8"));
-  config.dependencies ||= {};
+  const tomlSection = getScopeTomlSection(scope);
 
-  const dependencie = config.dependencie[name];
-  config.dependencies[name] = null;
+  config[tomlSection] ||= {};
+
+  const dependencie = config[tomlSection][name];
+  config[tomlSection][name] = null;
 
   fs.writeFileSync(configPath, TOML.stringify(config));
   console.log(`Removed ${dependencie}`);
@@ -62,17 +78,25 @@ export function installPackages() {
   const vaultyConfig: any = TOML.parse(
     fs.readFileSync(vaultyConfigPath, "utf-8"),
   );
-  const deps = vaultyConfig.dependencies ?? {};
 
-  vlog("Installing vaulty depencies");
-  for (const [name, value] of Object.entries(deps) as [string, string][]) {
-    installPackage(name, value);
+  const scopes: Scope[] = ["shared", "dev", "client", "server"];
+  for (const scope of scopes) {
+    const section = getScopeTomlSection(scope);
+    const deps: Record<string, string> = vaultyConfig[section] ?? {};
+
+    if (Object.keys(deps).length === 0) continue;
+
+    vlog(`\nInstalling vaulty ${getScopeLogName(scope)} dependencies`);
+
+    for (const [name, value] of Object.entries(deps)) {
+      installPackage(name, value, scope);
+    }
   }
 
-  console.log("\n All packages installed.");
+  console.log("\nAll dependencies installed.");
 }
 
-function installPackage(name: string, value: string) {
+function installPackage(name: string, value: string, scope: Scope) {
   let [repo, tag] = value.split("@");
 
   vlog(`\nStarting ${name} installing process`);
@@ -80,10 +104,11 @@ function installPackage(name: string, value: string) {
   validateRepo(repo);
   tag = resolveTag(repo, tag);
 
+  const pkgFolder = getScopeFolderPrefix(scope);
   const [userName, repoName] = repo.split("/");
   const cloneDir = path.join(
     process.cwd(),
-    "Packages",
+    pkgFolder,
     "_Index",
     `${userName}_${repoName}@${tag}`,
     name,
@@ -118,7 +143,7 @@ function installPackage(name: string, value: string) {
   vlog(`Writing ${name} alias script`);
 
   fs.writeFileSync(
-    path.join(process.cwd(), "Packages", `${name}.lua`),
+    path.join(process.cwd(), pkgFolder, `${name}.lua`),
     `return require(script.Parent._Index["${userName}_${repoName}@${tag}"]["${name}"])\n`,
   );
 
