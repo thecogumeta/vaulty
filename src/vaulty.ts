@@ -86,7 +86,7 @@ export function installPackages() {
 
     if (Object.keys(deps).length === 0) continue;
 
-    vlog(`\nInstalling vaulty ${getScopeLogName(scope)} dependencies`);
+    vlog(`\nInstalling vaulty ${getScopeLogName(scope)}`);
 
     for (const [name, value] of Object.entries(deps)) {
       installPackage(name, value, scope);
