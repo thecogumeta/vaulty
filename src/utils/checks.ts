@@ -33,12 +33,6 @@ export function checkDir() {
     process.exit(1);
   }
 
-  const wallyConfigPath = path.join(process.cwd(), "wally.toml");
-  if (!fs.existsSync(wallyConfigPath)) {
-    console.error("wally.toml not found in current directory");
-    process.exit(1);
-  }
-
   try {
     execSync("git --version", { stdio: "ignore" });
   } catch {

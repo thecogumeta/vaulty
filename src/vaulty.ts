@@ -67,17 +67,52 @@ export function removePackage(name: string, scope: Scope) {
   console.log(`Removed ${dependencie}`);
 }
 
+function runHookCmd(config: any, hook: string) {
+  let commands = config[hook];
+  if (!commands) return;
+
+  if (typeof commands === "string") commands = [commands];
+
+  for (const command of commands) {
+    vlog(`Running ${hook} command: ${command}`);
+    run(command);
+  }
+}
+
+function processFiles(vaultyConfig: any, vaultyDir: string) {
+  const files: Record<string, string> = vaultyConfig.files ?? {};
+
+  for (const [from, to] of Object.entries(files)) {
+    const fromPath = path.join(vaultyDir, from);
+    const toPath = path.join(vaultyDir, to as string);
+
+    if (!fs.existsSync(fromPath)) {
+      console.warn(`Warning: ${from} does not exist, skipping`);
+      continue;
+    }
+
+    const stat = fs.statSync(fromPath);
+
+    if (stat.isDirectory()) {
+      const filesToCopy = getFilesToCopy(fromPath, ["**"], []);
+      copyFiles(filesToCopy, fromPath, toPath);
+    } else {
+      copyFiles([path.basename(from)], path.dirname(fromPath), toPath);
+    }
+
+    vlog(`Copied ${from} -> ${to}`);
+  }
+}
+
 export function installPackages() {
   checkDir();
-
-  vlog("\nInstalling wally dependencies");
-  run("wally install");
-  vlog("Installed wally dependencies");
 
   const vaultyConfigPath = path.join(process.cwd(), "vaulty.toml");
   const vaultyConfig: any = TOML.parse(
     fs.readFileSync(vaultyConfigPath, "utf-8"),
   );
+
+  runHookCmd(vaultyConfig, "pre_install");
 
   const scopes: Scope[] = ["shared", "dev", "client", "server"];
   for (const scope of scopes) {
@@ -86,14 +121,21 @@ export function installPackages() {
 
     if (Object.keys(deps).length === 0) continue;
 
-    vlog(`\nInstalling vaulty ${getScopeLogName(scope)}`);
+    console.log(`\nInstalling ${getScopeLogName(scope)}...`);
 
     for (const [name, value] of Object.entries(deps)) {
       installPackage(name, value, scope);
     }
   }
 
-  console.log("\nAll dependencies installed.");
+  runHookCmd(vaultyConfig, "post_install");
+
+  if (vaultyConfig.files) {
+    console.log("\nProcessing files to copy...");
+    processFiles(vaultyConfig, process.cwd());
+  }
+
+  console.log("\nDone.");
 }
 
 function installPackage(name: string, value: string, scope: Scope) {
@@ -124,11 +166,16 @@ function installPackage(name: string, value: string, scope: Scope) {
 
   vlog(`Filtering ${name} files`);
 
-  const wallyPath = path.join(tempDir, "wally.toml");
-  if (!fs.existsSync(wallyPath))
-    throw new Error(`No wally.toml found in ${tempDir}`);
+  let configPath = path.join(tempDir, "vaulty.toml");
+  if (!fs.existsSync(configPath))
+    if (fs.existsSync(path.join(tempDir, "wally.toml"))) {
+      configPath = path.join(tempDir, "wally.toml");
+      console.warn(
+        `Warning: ${name} has no vaulty.toml, falling back to wally.toml. If this package uses wally dependencies, consider using pre_install hooks to run "wally install" before installing.`,
+      );
+    } else throw new Error(`No vaulty.toml found in ${tempDir}`);
 
-  const pkgConfig: any = TOML.parse(fs.readFileSync(wallyPath, "utf-8"));
+  const pkgConfig: any = TOML.parse(fs.readFileSync(configPath, "utf-8"));
   const include = pkgConfig.package?.include ?? [];
   const exclude = pkgConfig.package?.exclude ?? ["**"];
 
