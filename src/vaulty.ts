@@ -116,6 +116,7 @@ export function installPackages() {
 
   const scopes: Scope[] = ["shared", "dev", "client", "server"];
   for (const scope of scopes) {
+    fs.rmSync(getScopeFolderPrefix(scope), { recursive: true, force: true });
     const section = getScopeTomlSection(scope);
     const deps: Record<string, string> = vaultyConfig[section] ?? {};
 
@@ -195,11 +196,14 @@ function installPackage(name: string, value: string, scope: Scope) {
     `return require(script.Parent._Index["${userName}_${repoName}@${tag}"]["${name}"])\n`,
   );
 
-  const tsRedirectImportPath = `./_Index/${userName}_${repoName}@${tag}/${name}/${projInfo.tree["$path"]}`;
-  fs.writeFileSync(
-    path.join(process.cwd(), pkgFolder, `${name}.d.ts`),
-    `export * from "${tsRedirectImportPath}";\nexport { default } from "${tsRedirectImportPath}";\n`,
-  );
+  const dtsSource = path.join(cloneDir, projInfo.tree["$path"], "index.d.ts");
+  if (fs.existsSync(dtsSource)) {
+    const tsRedirectImportPath = `./_Index/${userName}_${repoName}@${tag}/${name}/${projInfo.tree["$path"]}`;
+    fs.writeFileSync(
+      path.join(process.cwd(), pkgFolder, `${name}.d.ts`),
+      `export * from "${tsRedirectImportPath}";\nexport { default } from "${tsRedirectImportPath}";\n`,
+    );
+  }
 
   vlog(`Done installing ${name}`);
   console.log(`Installed ${repo}@${tag}`);
