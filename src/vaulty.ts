@@ -140,7 +140,13 @@ export function installPackages() {
 }
 
 function installPackage(name: string, value: string, scope: Scope) {
-  let [repo, tag] = value.split("@");
+  let [rawRepo, tag] = value.split("@");
+  let [provider, repo] = rawRepo.split(":");
+  if (!repo) {
+    repo = provider;
+    provider = "github.com";
+  }
+  const [userName, repoName] = repo.split("/");
 
   vlog(`\nStarting ${name} installing process`);
 
@@ -148,7 +154,6 @@ function installPackage(name: string, value: string, scope: Scope) {
   tag = resolveTag(repo, tag);
 
   const pkgFolder = getScopeFolderPrefix(scope);
-  const [userName, repoName] = repo.split("/");
   const cloneDir = path.join(
     process.cwd(),
     pkgFolder,
@@ -161,7 +166,7 @@ function installPackage(name: string, value: string, scope: Scope) {
 
   const tempDir = cloneDir + "-";
   run(
-    `git clone --branch v${tag} --depth 1 https://github.com/${repo} "${tempDir}"`,
+    `git clone --branch v${tag} --depth 1 https://${provider}/${repo} "${tempDir}"`,
   );
   if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true });
 
