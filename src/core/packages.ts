@@ -1,0 +1,139 @@
+import fs from "fs";
+import path from "path";
+import toml from "@iarna/toml";
+import { ensureGitRepo } from "./git";
+import { getFilesToCopy } from "./files";
+import { generateVaultyLock, LockContent, PackageEntry } from "./vLock";
+import { scopeToDir } from "./scopes";
+import { log, vlog } from "./logging";
+
+function readLock(lockPath: string): LockContent {
+  return toml.parse(
+    fs.readFileSync(lockPath, "utf-8"),
+  ) as unknown as LockContent;
+}
+
+function writeRedirect(filePath: string, requirePath: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `return require(${requirePath})\n`, "utf-8");
+}
+
+function installFiles(
+  srcDir: string,
+  destDir: string,
+  include: string[],
+  exclude: string[],
+): void {
+  fs.mkdirSync(destDir, { recursive: true });
+  const files = getFilesToCopy(srcDir, include, exclude);
+  for (const file of files) {
+    const destPath = path.join(destDir, file);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.copyFileSync(path.join(srcDir, file), destPath);
+  }
+}
+
+function formatPkgLine(
+  index: number,
+  total: number,
+  pkg: PackageEntry,
+): string {
+  const idx = `[${index}/${total}]`;
+  const name = pkg.name.padEnd(30);
+  const scope = `(${pkg.scope})`.padEnd(20);
+  const source = pkg.source;
+  return `${idx} ${name} ${scope} ${source}`;
+}
+
+export async function installVaulty(): Promise<void> {
+  await generateVaultyLock();
+  const cwd = process.cwd();
+
+  for (const dir of Object.values(scopeToDir)) {
+    const fullPath = path.join(cwd, dir);
+    if (fs.existsSync(fullPath)) {
+      vlog(`Clearing ${dir}...`);
+      fs.rmSync(fullPath, { recursive: true, force: true });
+    }
+  }
+
+  const lock = readLock(path.join(cwd, "vaulty.lock"));
+  const installed = new Set<string>();
+  const total = lock.package.length;
+  let index = 0;
+
+  for (const pkg of lock.package) {
+    const key = `${pkg.scope}:${pkg.folder}`;
+    if (installed.has(key)) continue;
+    installed.add(key);
+    index++;
+
+    log(formatPkgLine(index, total, pkg));
+
+    const pkgDir = path.join(cwd, scopeToDir[pkg.scope] ?? "Packages");
+    const destDir = path.join(pkgDir, "_Index", pkg.folder);
+
+    const repoPath =
+      pkg.provider === "local"
+        ? path.resolve(cwd, pkg.source.replace(/^file:/, ""))
+        : await ensureGitRepo(
+            pkg.provider,
+            pkg.source.replace(`${pkg.provider}:`, ""),
+            pkg.ref,
+          );
+
+    let pkgConfig: any = fs.existsSync(path.join(repoPath, "vaulty.toml"))
+      ? toml.parse(fs.readFileSync(path.join(repoPath, "vaulty.toml"), "utf-8"))
+      : undefined;
+
+    if (!pkgConfig) {
+      if (!fs.existsSync(path.join(repoPath, "wally.toml"))) {
+        vlog(`Skipping ${pkg.source}: no config found`);
+        continue;
+      }
+      const pkgWallyConfig: any = toml.parse(
+        fs.readFileSync(path.join(repoPath, "wally.toml"), "utf-8"),
+      );
+      pkgWallyConfig.package ??= {};
+
+      pkgConfig = {
+        package: {
+          include: pkgWallyConfig.package.include,
+          exclude: pkgWallyConfig.package.exclude,
+        },
+      };
+    }
+
+    const include: string[] = pkgConfig.package?.include ?? [];
+    const exclude: string[] = pkgConfig.package?.exclude ?? [];
+
+    vlog(`  installed from: ${repoPath}`);
+    vlog(`  include: ${include.join(", ")}`);
+    vlog(`  exclude: ${exclude.join(", ")}`);
+    vlog(`  redirects: ${pkg.redirects?.length ?? 0} created`);
+    vlog(`  destination folder: ${destDir}`);
+
+    installFiles(repoPath, destDir, include, exclude);
+
+    for (const redirect of pkg.redirects ?? []) {
+      writeRedirect(
+        path.join(
+          destDir,
+          scopeToDir[pkg.scope] ?? "Packages",
+          `${redirect.name}.luau`,
+        ),
+        `script.Parent.Parent.Parent["${redirect.target}"]`,
+      );
+    }
+  }
+
+  for (const rr of lock.root_redirects ?? []) {
+    const pkgDir = path.join(cwd, scopeToDir[rr.scope] ?? "Packages");
+    writeRedirect(
+      path.join(pkgDir, `${rr.name}.luau`),
+      `script.Parent._Index["${rr.target}"]`,
+    );
+  }
+
+  log(`\n${index} packages installed`);
+}
