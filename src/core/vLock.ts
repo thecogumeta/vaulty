@@ -37,6 +37,10 @@ export interface LockContent {
   package: PackageEntry[];
 }
 
+function isFloatingRef(ref: string): boolean {
+  return ref.includes("^") || ref.includes("*") || ref.includes("~");
+}
+
 function readToml(filePath: string): Record<string, any> {
   if (!fs.existsSync(filePath)) return {};
   const raw = fs.readFileSync(filePath, "utf-8");
@@ -46,15 +50,7 @@ function readToml(filePath: string): Record<string, any> {
 function buildLockCache(lockPath: string): Map<string, PackageEntry> {
   const existing = readToml(lockPath);
   const packages: PackageEntry[] = existing.package ?? [];
-  return new Map(packages.map((p) => [`${p.scope}:${p.folder}`, p]));
-}
-
-function makeDepKey(dep: DepData, cwd: string): string {
-  if (dep.provider === "local") {
-    const abs = path.resolve(cwd, dep.repo);
-    return `local:${abs}`;
-  }
-  return `${dep.provider}:${dep.repo}@${dep.ref}`;
+  return new Map(packages.map((p) => [`${p.scope}:${p.source}`, p]));
 }
 
 function makeFolderName(dep: DepData, cwd: string): string {
@@ -65,6 +61,29 @@ function makeFolderName(dep: DepData, cwd: string): string {
   }
   const repoSlug = dep.repo.replace(/\//g, "_");
   return `${dep.provider}_${repoSlug}@${dep.ref}`;
+}
+
+async function resolveDepRef(
+  dep: DepData,
+  scope: string,
+  updateVersions: boolean,
+  lockCache: Map<string, PackageEntry>,
+): Promise<string> {
+  if (dep.provider === "local") return "local";
+
+  const source = `${dep.provider}:${dep.repo}`;
+  const cached = lockCache.get(`${scope}:${source}`);
+  const floating = isFloatingRef(dep.ref);
+
+  if (!floating) {
+    return resolveRef(dep.provider, dep.repo, dep.ref);
+  }
+
+  if (!updateVersions && cached?.ref) {
+    return cached.ref;
+  }
+
+  return resolveRef(dep.provider, dep.repo, dep.ref);
 }
 
 async function resolvePackages(
@@ -82,18 +101,18 @@ async function resolvePackages(
   for (const [depName, rawDep] of Object.entries(deps)) {
     const depData: DepData = handleDependencie(rawDep as string);
 
-    const cached = [...lockCache.values()].find(
-      (p) =>
-        p.scope === scope && p.source === `${depData.provider}:${depData.repo}`,
+    depData.ref = await resolveDepRef(
+      depData,
+      scope,
+      updateVersions,
+      lockCache,
     );
 
-    if (depData.provider !== "local") {
-      depData.ref =
-        (updateVersions ? undefined : cached?.ref) ??
-        (await resolveRef(depData.provider, depData.repo, depData.ref));
-    }
+    const key =
+      depData.provider === "local"
+        ? `local:${path.resolve(cwd, depData.repo)}`
+        : `${depData.provider}:${depData.repo}@${depData.ref}`;
 
-    const key = makeDepKey(depData, cwd);
     const folder = visited.get(key) ?? makeFolderName(depData, cwd);
 
     const redirect: Redirect = { name: depName, target: folder };
@@ -115,12 +134,14 @@ async function resolvePackages(
     const name: string = depConfig.package?.name ?? path.basename(repoPath);
     const subDeps: Record<string, unknown> = depConfig.dependencies ?? {};
 
+    const source =
+      depData.provider === "local"
+        ? `file:${path.relative(rootCwd, repoPath).replace(/\\/g, "/")}`
+        : `${depData.provider}:${depData.repo}`;
+
     const entry: PackageEntry = {
       name,
-      source:
-        depData.provider === "local"
-          ? `file:${path.relative(rootCwd, repoPath).replace(/\\/g, "/")}`
-          : `${depData.provider}:${depData.repo}`,
+      source,
       scope,
       provider: depData.provider,
       ref: depData.ref,
