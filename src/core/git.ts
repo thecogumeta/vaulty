@@ -56,10 +56,6 @@ export async function resolveRef(
   repo: string,
   ref: string,
 ): Promise<string> {
-  if (!ref.includes("^") && !ref.includes("*") && !ref.includes("~")) {
-    return ref;
-  }
-
   const output = run(`git ls-remote --tags https://${provider}/${repo}.git`);
 
   const tags = output
@@ -70,15 +66,32 @@ export async function resolveRef(
         ?.replace("refs/tags/", "")
         .replace(/\^\{\}$/, ""),
     )
-    .filter((t) => t && /^v?\d+\.\d+\.\d+$/.test(t)) as string[];
+    .filter(
+      (t): t is string => !!t && semver.valid(t.replace(/^v/, "")) !== null,
+    );
 
-  const resolved = semver.maxSatisfying(tags, ref);
+  if (!ref.includes("^") && !ref.includes("*") && !ref.includes("~")) {
+    const exact =
+      tags.find((t) => t === ref) ??
+      tags.find((t) => t.replace(/^v/, "") === ref.replace(/^v/, ""));
+
+    if (!exact) {
+      throw new Error(`Version "${ref}" not found for ${provider}/${repo}`);
+    }
+
+    return exact;
+  }
+
+  const resolved = semver.maxSatisfying(
+    tags.map((t) => t.replace(/^v/, "")),
+    ref.replace(/^v/, ""),
+  );
 
   if (!resolved) {
     throw new Error(`No version found for ${provider}/${repo}@${ref}`);
   }
 
-  return resolved;
+  return tags.find((t) => t.replace(/^v/, "") === resolved) ?? resolved;
 }
 
 export function endGitSession() {
