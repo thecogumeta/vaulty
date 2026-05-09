@@ -5,6 +5,6 @@ export default {
   command: "init",
   describe: "Initialize a new vaulty project",
   handler: cmd(async () => {
-    vaultyInit();
+    await vaultyInit();
   }),
 };

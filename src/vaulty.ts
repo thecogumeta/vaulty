@@ -2,18 +2,18 @@ import { initialize } from "./core/vConfig";
 import { generateVaultyLock } from "./core/vLock";
 import { installVaulty } from "./core/packages";
 
-export function vaultyInit() {
+export async function vaultyInit() {
   initialize();
 }
 
-export function vaultyLock() {
-  generateVaultyLock();
+export async function vaultyLock() {
+  await generateVaultyLock();
 }
 
-export function vaultyUpdate() {
-  generateVaultyLock(true);
+export async function vaultyUpdate() {
+  await generateVaultyLock(true);
 }
 
-export function vaultyInstall() {
-  installVaulty();
+export async function vaultyInstall() {
+  await installVaulty();
 }

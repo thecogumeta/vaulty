@@ -5,6 +5,6 @@ export default {
   command: "update",
   describe: "Update the vaulty.lock file",
   handler: cmd(async () => {
-    vaultyUpdate();
+    await vaultyUpdate();
   }),
 };

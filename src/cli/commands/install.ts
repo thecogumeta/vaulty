@@ -5,6 +5,6 @@ export default {
   command: "install",
   describe: "Install vaulty dependencies",
   handler: cmd(async () => {
-    vaultyInstall();
+    await vaultyInstall();
   }),
 };
