@@ -4,6 +4,7 @@ import toml from "@iarna/toml";
 import { handleDependencie } from "./vConfig";
 import { ensureGitRepo, resolveRef } from "./git";
 import { scopeToDir } from "./scopes";
+import { log, vlog } from "./logging";
 
 interface DepData {
   provider: string;
@@ -76,10 +77,13 @@ async function resolveDepRef(
   const floating = isFloatingRef(dep.ref);
 
   if (!floating) {
-    return resolveRef(dep.provider, dep.repo, dep.ref);
+    const resolved = resolveRef(dep.provider, dep.repo, dep.ref);
+    vlog(`  resolved ${dep.ref} -> ${resolved}`);
+    return resolved;
   }
 
   if (!updateVersions && cached?.ref) {
+    vlog(`  using locked version ${cached.ref}`);
     return cached.ref;
   }
 
@@ -97,9 +101,18 @@ async function resolvePackages(
   isRoot: boolean,
   parentEntry?: PackageEntry,
   scope: string = "dependencies",
+  depth: number = 0,
 ): Promise<void> {
   for (const [depName, rawDep] of Object.entries(deps)) {
+    const indent = "  ".repeat(depth);
+
     const depData: DepData = handleDependencie(rawDep as string);
+
+    (parentEntry ? vlog : log)(
+      `${indent}Resolving ${depName} [${scope}] (${depData.provider}:${depData.repo})`,
+    );
+
+    const originalRef = depData.ref;
 
     depData.ref = await resolveDepRef(
       depData,
@@ -107,6 +120,10 @@ async function resolvePackages(
       updateVersions,
       lockCache,
     );
+
+    if (depData.ref !== originalRef) {
+      vlog(`${indent}  resolved ${originalRef} -> ${depData.ref}`);
+    }
 
     const key =
       depData.provider === "local"
@@ -116,13 +133,20 @@ async function resolvePackages(
     const folder = visited.get(key) ?? makeFolderName(depData, cwd);
 
     const redirect: Redirect = { name: depName, target: folder };
+
     if (isRoot) {
       content.root_redirects.push({ ...redirect, scope });
+      vlog(`${indent}  added root redirect ${depName} -> ${folder}`);
     } else if (parentEntry) {
       parentEntry.redirects.push(redirect);
+      vlog(`${indent}  added redirect ${depName} -> ${folder}`);
     }
 
-    if (visited.has(key)) continue;
+    if (visited.has(key)) {
+      vlog(`${indent}  reusing existing package ${folder}`);
+      continue;
+    }
+
     visited.set(key, folder);
 
     const repoPath =
@@ -131,13 +155,23 @@ async function resolvePackages(
         : await ensureGitRepo(depData.provider, depData.repo, depData.ref);
 
     const depConfig = readToml(path.join(repoPath, "vaulty.toml"));
+
     const name: string = depConfig.package?.name ?? path.basename(repoPath);
+
     const subDeps: Record<string, unknown> = depConfig.dependencies ?? {};
 
     const source =
       depData.provider === "local"
         ? `file:${path.relative(rootCwd, repoPath).replace(/\\/g, "/")}`
         : `${depData.provider}:${depData.repo}`;
+
+    vlog(
+      depData.provider === "local"
+        ? `${indent}  resolved to local path ${repoPath}`
+        : `${indent}  resolved to ${source}@${depData.ref}`,
+    );
+
+    vlog(`${indent}  found ${Object.keys(subDeps).length} dependencies`);
 
     const entry: PackageEntry = {
       name,
@@ -151,6 +185,8 @@ async function resolvePackages(
 
     content.package.push(entry);
 
+    vlog(`${indent}  added package entry ${folder}`);
+
     await resolvePackages(
       subDeps,
       repoPath,
@@ -162,6 +198,7 @@ async function resolvePackages(
       false,
       entry,
       scope,
+      depth + 1,
     );
   }
 }
@@ -176,9 +213,15 @@ export async function generateVaultyLock(
     throw new Error("vaulty.toml not found in the current directory.");
   }
 
+  log(`${updateVersions ? "Updating" : "Generating"} vaulty.lock...`);
+
   const config = readToml(configPath);
+
   const lockPath = path.join(cwd, "vaulty.lock");
+
   const lockCache = buildLockCache(lockPath);
+
+  vlog(`Loaded ${lockCache.size} cached package entries from vaulty.lock`);
 
   const content: LockContent = {
     root_redirects: [],
@@ -187,6 +230,9 @@ export async function generateVaultyLock(
 
   for (const [scope] of Object.entries(scopeToDir)) {
     const deps: Record<string, unknown> = config[scope] ?? {};
+
+    vlog(`Resolving ${Object.keys(deps).length} packages from ${scope}`);
+
     await resolvePackages(
       deps,
       cwd,
@@ -202,4 +248,10 @@ export async function generateVaultyLock(
   }
 
   fs.writeFileSync(lockPath, toml.stringify(content as any));
+
+  vlog(`Generated ${content.package.length} package entries`);
+
+  vlog(`Generated ${content.root_redirects.length} root redirects`);
+
+  log(`${updateVersions ? "Updated" : "Generated"} vaulty.lock successfully`);
 }
