@@ -255,3 +255,78 @@ export async function generateVaultyLock(
 
   log(`${updateVersions ? "Updated" : "Generated"} vaulty.lock successfully`);
 }
+
+type OutdatedEntry = {
+  name: string;
+  scope: string;
+  currentRef: string;
+  latestRef: string;
+};
+
+export async function getOutdatedPackages(): Promise<OutdatedEntry[]> {
+  const cwd = process.cwd();
+  const configPath = path.join(cwd, "vaulty.toml");
+
+  if (!fs.existsSync(configPath)) {
+    throw new Error("vaulty.toml not found in the current directory.");
+  }
+
+  log("Checking for outdated packages...");
+
+  const config = readToml(configPath);
+  const lockPath = path.join(cwd, "vaulty.lock");
+  const lockCache = buildLockCache(lockPath);
+
+  vlog(`Loaded ${lockCache.size} cached package entries from vaulty.lock`);
+
+  const outdated: OutdatedEntry[] = [];
+
+  for (const [scope] of Object.entries(scopeToDir)) {
+    const deps: Record<string, unknown> = config[scope] ?? {};
+
+    vlog(`Checking ${Object.keys(deps).length} packages from ${scope}`);
+
+    for (const [depName, rawDep] of Object.entries(deps)) {
+      const depData: DepData = handleDependencie(rawDep as string);
+
+      if (depData.provider === "local" || !isFloatingRef(depData.ref)) {
+        continue;
+      }
+
+      const source = `${depData.provider}:${depData.repo}`;
+      const cached = lockCache.get(`${scope}:${source}`);
+
+      if (!cached?.ref) continue;
+
+      vlog(`  Resolving latest ref for ${depName} (${depData.ref})`);
+
+      const latestRef = await resolveRef(
+        depData.provider,
+        depData.repo,
+        depData.ref,
+      );
+
+      if (latestRef !== cached.ref) {
+        vlog(`  ${depName} outdated: ${cached.ref} -> ${latestRef}`);
+        outdated.push({
+          name: depName,
+          scope,
+          currentRef: cached.ref,
+          latestRef,
+        });
+      } else {
+        vlog(`  ${depName} is up to date (${cached.ref})`);
+      }
+    }
+  }
+
+  if (outdated.length === 0) {
+    log("All packages are up to date.");
+  } else {
+    for (const pkg of outdated) {
+      log(`${pkg.name} (${pkg.scope}): ${pkg.currentRef} -> ${pkg.latestRef}`);
+    }
+  }
+
+  return outdated;
+}
