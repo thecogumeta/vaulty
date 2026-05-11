@@ -66,9 +66,12 @@ function makeFolderName(dep: DepData, cwd: string): string {
 
 async function resolveDepRef(
   dep: DepData,
+  depName: string,
   scope: string,
   updateVersions: boolean,
   lockCache: Map<string, PackageEntry>,
+  onlyPackage?: string,
+  onlyScope?: string,
 ): Promise<string> {
   if (dep.provider === "local") return "local";
 
@@ -77,12 +80,16 @@ async function resolveDepRef(
   const floating = isFloatingRef(dep.ref);
 
   if (!floating) {
-    const resolved = resolveRef(dep.provider, dep.repo, dep.ref);
+    const resolved = await resolveRef(dep.provider, dep.repo, dep.ref);
     vlog(`  resolved ${dep.ref} -> ${resolved}`);
     return resolved;
   }
 
-  if (!updateVersions && cached?.ref) {
+  const scopeMatches = !onlyScope || onlyScope === scope;
+  const packageMatches = !onlyPackage || onlyPackage === depName;
+  const shouldUpdate = updateVersions && scopeMatches && packageMatches;
+
+  if (!shouldUpdate && cached?.ref) {
     vlog(`  using locked version ${cached.ref}`);
     return cached.ref;
   }
@@ -102,6 +109,8 @@ async function resolvePackages(
   parentEntry?: PackageEntry,
   scope: string = "dependencies",
   depth: number = 0,
+  onlyPackage?: string,
+  onlyScope?: string,
 ): Promise<void> {
   for (const [depName, rawDep] of Object.entries(deps)) {
     const indent = "  ".repeat(depth);
@@ -116,9 +125,12 @@ async function resolvePackages(
 
     depData.ref = await resolveDepRef(
       depData,
+      depName,
       scope,
       updateVersions,
       lockCache,
+      onlyPackage,
+      onlyScope,
     );
 
     if (depData.ref !== originalRef) {
@@ -199,12 +211,16 @@ async function resolvePackages(
       entry,
       scope,
       depth + 1,
+      onlyPackage,
+      onlyScope,
     );
   }
 }
 
 export async function generateVaultyLock(
   updateVersions: boolean = false,
+  onlyPackage?: string,
+  onlyScope?: string,
 ): Promise<void> {
   const cwd = process.cwd();
   const configPath = path.join(cwd, "vaulty.toml");
@@ -244,6 +260,9 @@ export async function generateVaultyLock(
       true,
       undefined,
       scope,
+      0,
+      onlyPackage,
+      onlyScope,
     );
   }
 

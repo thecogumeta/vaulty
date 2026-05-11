@@ -14,8 +14,8 @@ export async function vaultyOutdated() {
   await getOutdatedPackages();
 }
 
-export async function vaultyUpdate() {
-  await generateVaultyLock(true);
+export async function vaultyUpdate(onlyPackage?: string, onlyScope?: string) {
+  await generateVaultyLock(true, onlyPackage, onlyScope);
 }
 
 export async function vaultyInstall() {
