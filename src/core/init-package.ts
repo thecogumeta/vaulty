@@ -43,9 +43,6 @@ async function initializeProjectsJson(ctx: InitContext) {
     tree: {
       $className: "DataModel",
       ReplicatedStorage: {
-        DevPackages: {
-          $path: "DevPackages",
-        },
         [ctx.packageName]: {
           $path: "lib",
         },
@@ -80,7 +77,7 @@ async function initializePackageJson(ctx: InitContext) {
 
   const packageJson = {
     scripts: {
-      "gen.tests": "rojo sourcemap tests.project.json -o sourcemap.json",
+      "gen.testmap": "rojo sourcemap tests.project.json -o sourcemap.json",
     },
   };
 
