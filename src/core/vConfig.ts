@@ -49,20 +49,25 @@ export function handleDependencie(dep: string): {
   return { repo, provider, ref };
 }
 
-export function initialize() {
-  if (fs.existsSync(path.join(process.cwd(), "vaulty.toml"))) {
-    throw new Error("vaulty.toml already exists in the current directory.");
-  }
+export function initialize(targetDir = process.cwd()) {
+  const packageName = path.basename(targetDir);
 
-  const configPath = path.join(process.cwd(), "vaulty.toml");
+  const configPath = path.join(targetDir, "vaulty.toml");
+
+  if (fs.existsSync(configPath)) {
+    throw new Error("vaulty.toml already exists in the target directory.");
+  }
 
   fs.writeFileSync(
     configPath,
+
     toml.stringify({
       package: {
-        name: `${getUsername()}/${path.basename(process.cwd())}`,
+        name: `${getUsername()}/${packageName}`,
         version: "1.0.0",
+
         exclude: ["**"],
+
         include: [
           "src/**/*",
           "lib/**/*",
@@ -70,9 +75,10 @@ export function initialize() {
           "vaulty.toml",
         ],
       },
+
       dependencies: [],
     }),
   );
 
-  log("Initialized vaulty.toml in the current directory.");
+  log(`Initialized vaulty.toml in ${targetDir}`);
 }

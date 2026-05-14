@@ -8,6 +8,7 @@ import update from "./commands/update";
 
 import { activeVerbose } from "../core/logging";
 import outdated from "./commands/outdated";
+import initPackage from "./commands/init-package";
 
 async function main(): Promise<void> {
   await yargs(hideBin(process.argv))
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
 
     .command(install)
     .command(init)
+    .command(initPackage)
     .command(lock)
     .command(outdated)
     .command(update)

@@ -1,9 +1,10 @@
 import { initialize } from "./core/vConfig";
 import { generateVaultyLock, getOutdatedPackages } from "./core/vLock";
 import { installVaulty } from "./core/packages";
+import { initializePackage } from "./core/init-package";
 
-export async function vaultyInit() {
-  initialize();
+export async function vaultyInit(isPackage: boolean = false) {
+  isPackage ? await initializePackage() : initialize();
 }
 
 export async function vaultyLock() {
