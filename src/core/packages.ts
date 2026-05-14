@@ -58,6 +58,31 @@ export async function installVaulty(): Promise<void> {
   }
 
   const lock = readLock(path.join(cwd, "vaulty.lock"));
+
+  async function getTargetProjName(
+    folder: string,
+  ): Promise<string | undefined> {
+    const targetPkg = lock.package.find((p) => p.folder === folder);
+    if (!targetPkg) return undefined;
+    const targetRepoPath =
+      targetPkg.provider === "local"
+        ? path.resolve(cwd, targetPkg.source.replace(/^file:/, ""))
+        : await ensureGitRepo(
+            targetPkg.provider,
+            targetPkg.source.replace(`${targetPkg.provider}:`, ""),
+            targetPkg.ref,
+          );
+    const targetDefaultProject = path.join(
+      targetRepoPath,
+      "default.project.json",
+    );
+
+    if (!fs.existsSync(targetDefaultProject)) return undefined;
+
+    const proj = JSON.parse(fs.readFileSync(targetDefaultProject, "utf-8"));
+    return proj.name as string | undefined;
+  }
+
   const installed = new Set<string>();
   const total = lock.package.length;
   let index = 0;
@@ -67,12 +92,10 @@ export async function installVaulty(): Promise<void> {
     if (installed.has(key)) continue;
     installed.add(key);
     index++;
-
     log(formatPkgLine(index, total, pkg));
 
     const pkgDir = path.join(cwd, scopeToDir[pkg.scope] ?? "Packages");
     const destDir = path.join(pkgDir, "_Index", pkg.folder);
-
     const repoPath =
       pkg.provider === "local"
         ? path.resolve(cwd, pkg.source.replace(/^file:/, ""))
@@ -81,7 +104,6 @@ export async function installVaulty(): Promise<void> {
             pkg.source.replace(`${pkg.provider}:`, ""),
             pkg.ref,
           );
-
     let pkgConfig: any = fs.existsSync(path.join(repoPath, "vaulty.toml"))
       ? toml.parse(fs.readFileSync(path.join(repoPath, "vaulty.toml"), "utf-8"))
       : undefined;
@@ -91,11 +113,12 @@ export async function installVaulty(): Promise<void> {
         vlog(`Skipping ${pkg.source}: no config found`);
         continue;
       }
+
       const pkgWallyConfig: any = toml.parse(
         fs.readFileSync(path.join(repoPath, "wally.toml"), "utf-8"),
       );
-      pkgWallyConfig.package ??= {};
 
+      pkgWallyConfig.package ??= {};
       pkgConfig = {
         package: {
           include: pkgWallyConfig.package.include,
@@ -106,34 +129,54 @@ export async function installVaulty(): Promise<void> {
 
     const include: string[] = pkgConfig.package?.include ?? [];
     const exclude: string[] = pkgConfig.package?.exclude ?? [];
+    const defaultProjectPath = path.join(repoPath, "default.project.json");
+    let finalDir = destDir;
+
+    if (fs.existsSync(defaultProjectPath)) {
+      const proj = JSON.parse(fs.readFileSync(defaultProjectPath, "utf-8"));
+
+      if (proj.tree?.$className !== undefined) {
+        throw new Error(
+          `Package ${pkg.folder} has a non-pure default.project.json (tree.$className is set to "${proj.tree.$className}"). ` +
+            `Only pure $path trees are supported.`,
+        );
+      }
+      if (!proj.name) {
+        throw new Error(
+          `Package ${pkg.folder} has a default.project.json without a name field.`,
+        );
+      }
+
+      finalDir = path.join(destDir, proj.name);
+    }
 
     vlog(`  installed from: ${repoPath}`);
     vlog(`  include: ${include.join(", ")}`);
     vlog(`  exclude: ${exclude.join(", ")}`);
     vlog(`  redirects: ${pkg.redirects?.length ?? 0} created`);
-    vlog(`  destination folder: ${destDir}`);
-
-    installFiles(repoPath, destDir, include, exclude);
+    vlog(`  destination folder: ${finalDir}`);
+    installFiles(repoPath, finalDir, include, exclude);
 
     for (const redirect of pkg.redirects ?? []) {
+      const targetProjName = await getTargetProjName(redirect.target);
       writeRedirect(
         path.join(
-          destDir,
+          finalDir,
           scopeToDir[pkg.scope] ?? "Packages",
           `${redirect.name}.luau`,
         ),
-        `script.Parent.Parent.Parent["${redirect.target}"]`,
+        `script.Parent.Parent.Parent.Parent["${redirect.target}"]${targetProjName ? `["${targetProjName}"]` : ""}`,
       );
     }
   }
 
   for (const rr of lock.root_redirects ?? []) {
     const pkgDir = path.join(cwd, scopeToDir[rr.scope] ?? "Packages");
+    const targetProjName = await getTargetProjName(rr.target);
     writeRedirect(
       path.join(pkgDir, `${rr.name}.luau`),
-      `script.Parent._Index["${rr.target}"]`,
+      `script.Parent._Index["${rr.target}"]${targetProjName ? `["${targetProjName}"]` : ""}`,
     );
   }
-
   log(`\n${index} packages installed`);
 }
