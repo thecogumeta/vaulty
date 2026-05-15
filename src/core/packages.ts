@@ -6,11 +6,18 @@ import { getFilesToCopy } from "./files";
 import { generateVaultyLock, LockContent, PackageEntry } from "./vLock";
 import { scopeToDir } from "./scopes";
 import { log, vlog } from "./logging";
+import { execSync } from "child_process";
 
 function readLock(lockPath: string): LockContent {
   return toml.parse(
     fs.readFileSync(lockPath, "utf-8"),
   ) as unknown as LockContent;
+}
+
+function readToml(filePath: string): Record<string, any> {
+  if (!fs.existsSync(filePath)) return {};
+  const raw = fs.readFileSync(filePath, "utf-8");
+  return toml.parse(raw) as Record<string, any>;
 }
 
 function writeRedirect(filePath: string, requirePath: string): void {
@@ -45,6 +52,26 @@ function formatPkgLine(
   return `${idx} ${name} ${scope} ${source}`;
 }
 
+function runHooks(hooks?: string | string[], name = "Hook"): void {
+  if (!hooks) return;
+  const hooksList = Array.isArray(hooks) ? hooks : [hooks];
+
+  for (const hook of hooksList) {
+    log(`[${name}] Running: ${hook}`);
+
+    try {
+      execSync(hook, {
+        stdio: "ignore",
+        env: process.env,
+      });
+    } catch (error) {
+      throw new Error(
+        `[${name}] Failed while executing "${hook}"\n${String(error)}`,
+      );
+    }
+  }
+}
+
 export async function installVaulty(): Promise<void> {
   await generateVaultyLock();
   const cwd = process.cwd();
@@ -58,6 +85,7 @@ export async function installVaulty(): Promise<void> {
   }
 
   const lock = readLock(path.join(cwd, "vaulty.lock"));
+  const config = readToml(path.join(cwd, "vaulty.toml"));
 
   async function getTargetProjName(
     folder: string,
@@ -83,9 +111,12 @@ export async function installVaulty(): Promise<void> {
     return proj.name as string | undefined;
   }
 
+  const scripts: Record<string, string | string[]> = config.scripts ?? [];
   const installed = new Set<string>();
   const total = lock.package.length;
   let index = 0;
+
+  runHooks(scripts.preinstall, "Pre-Install Script");
 
   for (const pkg of lock.package) {
     const key = `${pkg.scope}:${pkg.folder}`;
@@ -178,5 +209,8 @@ export async function installVaulty(): Promise<void> {
       `script.Parent._Index["${rr.target}"]${targetProjName ? `["${targetProjName}"]` : ""}`,
     );
   }
+
+  runHooks(scripts.postinstall, "Post-Install Script");
+
   log(`\n${index} packages installed`);
 }
