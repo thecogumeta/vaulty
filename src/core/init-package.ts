@@ -39,7 +39,7 @@ async function initializeProjectsJson(ctx: InitContext) {
   };
 
   const testsProject = {
-    name: `${ctx.packageName} test runner`,
+    name: `${ctx.packageName} Test-Runner`,
     tree: {
       $className: "DataModel",
       ReplicatedStorage: {
@@ -77,7 +77,8 @@ async function initializePackageJson(ctx: InitContext) {
 
   const packageJson = {
     scripts: {
-      "gen.testmap": "rojo sourcemap tests.project.json -o sourcemap.json",
+      "gen.testsmap": "rojo sourcemap tests.project.json -o sourcemap.json",
+      "sync.tests": "rojo serve tests.project.json",
     },
   };
 
@@ -181,6 +182,12 @@ export async function initializePackage() {
   } catch {}
   try {
     execSync("git init", {
+      stdio: "ignore",
+      cwd: ctx.resolvedDir,
+    });
+  } catch {}
+  try {
+    execSync("vaulty lock", {
       stdio: "ignore",
       cwd: ctx.resolvedDir,
     });
