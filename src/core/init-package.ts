@@ -77,6 +77,7 @@ async function initializePackageJson(ctx: InitContext) {
 
   const packageJson = {
     scripts: {
+      "gen.map": "rojo sourcemap default.project.json -o sourcemap.json",
       "gen.testsmap": "rojo sourcemap tests.project.json -o sourcemap.json",
       "sync.tests": "rojo serve tests.project.json",
     },
