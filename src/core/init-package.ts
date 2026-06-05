@@ -107,6 +107,20 @@ async function initializeExtraFiles(ctx: InitContext) {
     },
   );
 
+  const styluaConfig = `syntax = "Luau"
+indent_type = "Tabs"
+column_width = 75
+quote_style = "ForceDouble"
+call_parentheses = "Input"
+collapse_simple_statement = "Always"
+line_endings = "Unix"
+block_newline_gaps = "Never"
+`;
+
+  await writeFile(path.join(ctx.resolvedDir, "stylua.toml"), styluaConfig, {
+    flag: "wx",
+  });
+
   await writeFile(
     path.join(ctx.resolvedDir, ".gitignore"),
     ["sourcemap.json", "*Packages/", "*.rbx*", ""].join("\n"),
