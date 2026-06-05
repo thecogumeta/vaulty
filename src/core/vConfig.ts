@@ -76,7 +76,7 @@ export function initialize(targetDir = process.cwd()) {
         ],
       },
 
-      dependencies: [],
+      dependencies: {},
     }),
   );
 
