@@ -56,8 +56,19 @@ export async function resolveRef(
   repo: string,
   ref: string,
 ): Promise<string> {
-  const output = run(`git ls-remote --tags https://${provider}/${repo}.git`);
+  const headsOutput = run(
+    `git ls-remote --heads https://${provider}/${repo}.git`,
+  );
+  const branches = headsOutput
+    .split("\n")
+    .map((line) => line.split("\t")[1]?.replace("refs/heads/", ""))
+    .filter((b): b is string => !!b);
 
+  if (branches.includes(ref)) {
+    return ref;
+  }
+
+  const output = run(`git ls-remote --tags https://${provider}/${repo}.git`);
   const tags = output
     .split("\n")
     .map((line) =>
@@ -74,11 +85,9 @@ export async function resolveRef(
     const exact =
       tags.find((t) => t === ref) ??
       tags.find((t) => t.replace(/^v/, "") === ref.replace(/^v/, ""));
-
     if (!exact) {
       throw new Error(`Version "${ref}" not found for ${provider}/${repo}`);
     }
-
     return exact;
   }
 
@@ -86,11 +95,9 @@ export async function resolveRef(
     tags.map((t) => t.replace(/^v/, "")),
     ref.replace(/^v/, ""),
   );
-
   if (!resolved) {
     throw new Error(`No version found for ${provider}/${repo}@${ref}`);
   }
-
   return tags.find((t) => t.replace(/^v/, "") === resolved) ?? resolved;
 }
 
