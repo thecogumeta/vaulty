@@ -76,16 +76,17 @@ export async function installVaulty(): Promise<void> {
   await generateVaultyLock();
   const cwd = process.cwd();
 
-  for (const dir of Object.values(scopeToDir)) {
-    const fullPath = path.join(cwd, dir);
-    if (fs.existsSync(fullPath)) {
-      vlog(`Clearing ${dir}...`);
-      fs.rmSync(fullPath, { recursive: true, force: true });
-    }
-  }
-
   const lock = readLock(path.join(cwd, "vaulty.lock"));
   const config = readToml(path.join(cwd, "vaulty.toml"));
+
+  if (!config.preservePackagesOnInstall)
+    for (const dir of Object.values(scopeToDir)) {
+      const fullPath = path.join(cwd, dir);
+      if (fs.existsSync(fullPath)) {
+        vlog(`Clearing ${dir}...`);
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      }
+    }
 
   async function getTargetProjName(
     folder: string,
