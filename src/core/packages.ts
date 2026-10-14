@@ -112,10 +112,12 @@ export async function installVaulty(): Promise<void> {
     return proj.name as string | undefined;
   }
 
-  const scripts: Record<string, string | string[]> = config.scripts ?? [];
+  const scripts: Record<string, string | string[]> = config.scripts ?? {};
   const installed = new Set<string>();
   const total = lock.package.length;
   let index = 0;
+
+  const dtsEntries = new Map<string, string>();
 
   runHooks(scripts.preinstall, "Pre-Install Script");
 
@@ -163,6 +165,7 @@ export async function installVaulty(): Promise<void> {
     const exclude: string[] = pkgConfig.package?.exclude ?? [];
     const defaultProjectPath = path.join(repoPath, "default.project.json");
     let finalDir = destDir;
+    let sourceSubdir = "";
 
     if (fs.existsSync(defaultProjectPath)) {
       const proj = JSON.parse(fs.readFileSync(defaultProjectPath, "utf-8"));
@@ -180,6 +183,12 @@ export async function installVaulty(): Promise<void> {
       }
 
       finalDir = path.join(destDir, proj.name);
+
+      if (typeof proj.tree?.$path === "string") {
+        sourceSubdir = path.extname(proj.tree.$path)
+          ? path.dirname(proj.tree.$path)
+          : proj.tree.$path;
+      }
     }
 
     vlog(`  installed from: ${repoPath}`);
@@ -188,6 +197,14 @@ export async function installVaulty(): Promise<void> {
     vlog(`  redirects: ${pkg.redirects?.length ?? 0} created`);
     vlog(`  destination folder: ${finalDir}`);
     installFiles(repoPath, finalDir, include, exclude);
+
+    const dtsSource = path.join(finalDir, sourceSubdir, "index.d.ts");
+    if (fs.existsSync(dtsSource)) {
+      dtsEntries.set(pkg.folder, path.join(finalDir, sourceSubdir, "index"));
+      vlog(`  type declarations found: ${dtsSource}`);
+    } else {
+      vlog(`  no index.d.ts found at ${dtsSource}`);
+    }
 
     for (const redirect of pkg.redirects ?? []) {
       const targetProjName = await getTargetProjName(redirect.target);
@@ -209,6 +226,23 @@ export async function installVaulty(): Promise<void> {
       path.join(pkgDir, `${rr.name}.luau`),
       `script.Parent._Index["${rr.target}"]${targetProjName ? `["${targetProjName}"]` : ""}`,
     );
+
+    const dtsEntry = dtsEntries.get(rr.target);
+    if (dtsEntry) {
+      const dtsPath = path.join(pkgDir, `${rr.name}.d.ts`);
+      let relImport = path
+        .relative(path.dirname(dtsPath), dtsEntry)
+        .split(path.sep)
+        .join("/");
+      if (!relImport.startsWith(".")) relImport = `./${relImport}`;
+
+      fs.writeFileSync(
+        dtsPath,
+        `export * from "${relImport}";\nexport { default } from "${relImport}";\n`,
+        "utf-8",
+      );
+      vlog(`  type declarations: ${rr.name}.d.ts`);
+    }
   }
 
   runHooks(scripts.postinstall, "Post-Install Script");
