@@ -79,17 +79,16 @@ async function resolveDepRef(
   const cached = lockCache.get(`${scope}:${source}`);
   const floating = isFloatingRef(dep.ref);
 
-  if (!floating) {
-    const resolved = await resolveRef(dep.provider, dep.repo, dep.ref);
-    vlog(`  resolved ${dep.ref} -> ${resolved}`);
-    return resolved;
-  }
-
   const scopeMatches = !onlyScope || onlyScope === scope;
   const packageMatches = !onlyPackage || onlyPackage === depName;
   const shouldUpdate = updateVersions && scopeMatches && packageMatches;
 
-  if (!shouldUpdate && cached?.ref) {
+  if (!floating && cached?.ref === dep.ref) {
+    vlog(`  using locked version ${cached.ref}`);
+    return cached.ref;
+  }
+
+  if (floating && !shouldUpdate && cached?.ref) {
     vlog(`  using locked version ${cached.ref}`);
     return cached.ref;
   }
@@ -112,30 +111,39 @@ async function resolvePackages(
   onlyPackage?: string,
   onlyScope?: string,
 ): Promise<void> {
-  for (const [depName, rawDep] of Object.entries(deps)) {
+  const entries = Object.entries(deps);
+
+  const resolved = await Promise.all(
+    entries.map(async ([depName, rawDep]) => {
+      const indent = "  ".repeat(depth);
+      const depData: DepData = handleDependencie(rawDep as string);
+
+      (parentEntry ? vlog : log)(
+        `${indent}Resolving ${depName} [${scope}] (${depData.provider}:${depData.repo})`,
+      );
+
+      const originalRef = depData.ref;
+
+      depData.ref = await resolveDepRef(
+        depData,
+        depName,
+        scope,
+        updateVersions,
+        lockCache,
+        onlyPackage,
+        onlyScope,
+      );
+
+      if (depData.ref !== originalRef) {
+        vlog(`${indent}  resolved ${originalRef} -> ${depData.ref}`);
+      }
+
+      return { depName, depData };
+    }),
+  );
+
+  for (const { depName, depData } of resolved) {
     const indent = "  ".repeat(depth);
-
-    const depData: DepData = handleDependencie(rawDep as string);
-
-    (parentEntry ? vlog : log)(
-      `${indent}Resolving ${depName} [${scope}] (${depData.provider}:${depData.repo})`,
-    );
-
-    const originalRef = depData.ref;
-
-    depData.ref = await resolveDepRef(
-      depData,
-      depName,
-      scope,
-      updateVersions,
-      lockCache,
-      onlyPackage,
-      onlyScope,
-    );
-
-    if (depData.ref !== originalRef) {
-      vlog(`${indent}  resolved ${originalRef} -> ${depData.ref}`);
-    }
 
     const key =
       depData.provider === "local"
