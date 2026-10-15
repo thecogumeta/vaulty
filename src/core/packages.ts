@@ -7,6 +7,17 @@ import { generateVaultyLock, LockContent, PackageEntry } from "./vLock";
 import { scopeToDir } from "./scopes";
 import { log, vlog } from "./logging";
 import { execSync } from "child_process";
+import {
+  ExportedType,
+  buildTypeExports,
+  findEntryFile,
+  scanExportedTypes,
+} from "./luauTypes";
+
+interface TargetInfo {
+  projName?: string;
+  types: ExportedType[];
+}
 
 function readLock(lockPath: string): LockContent {
   return toml.parse(
@@ -20,9 +31,19 @@ function readToml(filePath: string): Record<string, any> {
   return toml.parse(raw) as Record<string, any>;
 }
 
-function writeRedirect(filePath: string, requirePath: string): void {
+function writeRedirect(
+  filePath: string,
+  requirePath: string,
+  types: ExportedType[] = [],
+): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `return require(${requirePath})\n`, "utf-8");
+
+  const typeExports = buildTypeExports(types);
+  const content = typeExports
+    ? `local Module = require(${requirePath})\n\n${typeExports}\n\nreturn Module\n`
+    : `return require(${requirePath})\n`;
+
+  fs.writeFileSync(filePath, content, "utf-8");
 }
 
 function installFiles(
@@ -88,9 +109,11 @@ export async function installVaulty(): Promise<void> {
       }
     }
 
-  async function getTargetProjName(
+  const targetCache = new Map<string, TargetInfo | undefined>();
+
+  async function loadTargetInfo(
     folder: string,
-  ): Promise<string | undefined> {
+  ): Promise<TargetInfo | undefined> {
     const targetPkg = lock.package.find((p) => p.folder === folder);
     if (!targetPkg) return undefined;
     const targetRepoPath =
@@ -106,10 +129,27 @@ export async function installVaulty(): Promise<void> {
       "default.project.json",
     );
 
-    if (!fs.existsSync(targetDefaultProject)) return undefined;
+    if (!fs.existsSync(targetDefaultProject)) return { types: [] };
 
     const proj = JSON.parse(fs.readFileSync(targetDefaultProject, "utf-8"));
-    return proj.name as string | undefined;
+    const entry = findEntryFile(
+      targetRepoPath,
+      typeof proj.tree?.$path === "string" ? proj.tree.$path : undefined,
+    );
+    const types = entry
+      ? scanExportedTypes(fs.readFileSync(entry, "utf-8"))
+      : [];
+
+    return { projName: proj.name as string | undefined, types };
+  }
+
+  async function getTargetInfo(
+    folder: string,
+  ): Promise<TargetInfo | undefined> {
+    if (targetCache.has(folder)) return targetCache.get(folder);
+    const info = await loadTargetInfo(folder);
+    targetCache.set(folder, info);
+    return info;
   }
 
   const scripts: Record<string, string | string[]> = config.scripts ?? {};
@@ -207,24 +247,32 @@ export async function installVaulty(): Promise<void> {
     }
 
     for (const redirect of pkg.redirects ?? []) {
-      const targetProjName = await getTargetProjName(redirect.target);
+      const target = await getTargetInfo(redirect.target);
+      const projSuffix = target?.projName ? `["${target.projName}"]` : "";
+      vlog(
+        `  redirect ${redirect.name}: ${target?.types.length ?? 0} type exports`,
+      );
       writeRedirect(
         path.join(
           finalDir,
           scopeToDir[pkg.scope] ?? "Packages",
           `${redirect.name}.luau`,
         ),
-        `script.Parent.Parent.Parent.Parent["${redirect.target}"]${targetProjName ? `["${targetProjName}"]` : ""}`,
+        `script.Parent.Parent.Parent.Parent["${redirect.target}"]${projSuffix}`,
+        target?.types,
       );
     }
   }
 
   for (const rr of lock.root_redirects ?? []) {
     const pkgDir = path.join(cwd, scopeToDir[rr.scope] ?? "Packages");
-    const targetProjName = await getTargetProjName(rr.target);
+    const target = await getTargetInfo(rr.target);
+    const projSuffix = target?.projName ? `["${target.projName}"]` : "";
+    vlog(`root redirect ${rr.name}: ${target?.types.length ?? 0} type exports`);
     writeRedirect(
       path.join(pkgDir, `${rr.name}.luau`),
-      `script.Parent._Index["${rr.target}"]${targetProjName ? `["${targetProjName}"]` : ""}`,
+      `script.Parent._Index["${rr.target}"]${projSuffix}`,
+      target?.types,
     );
 
     const dtsEntry = dtsEntries.get(rr.target);
