@@ -5,6 +5,7 @@ import init from "./commands/init";
 import lock from "./commands/lock";
 import install from "./commands/install";
 import update from "./commands/update";
+import info from "./commands/info";
 
 import { activeVerbose } from "../core/logging";
 import outdated from "./commands/outdated";
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
     .command(lock)
     .command(outdated)
     .command(update)
+    .command(info)
 
     .parseAsync();
 }
