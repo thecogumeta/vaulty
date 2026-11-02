@@ -4,3 +4,10 @@ export const scopeToDir: Record<string, string> = {
   "client-dependencies": "ClientPackages",
   "dev-dependencies": "DevPackages",
 };
+
+export const packageScopes: (keyof typeof scopeToDir)[] = [
+  "dependencies",
+  "server-dependencies",
+  "client-dependencies",
+  "dev-dependencies",
+];
