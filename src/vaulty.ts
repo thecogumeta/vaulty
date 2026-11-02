@@ -2,6 +2,7 @@ import { initialize } from "./core/vConfig";
 import { generateVaultyLock, getOutdatedPackages } from "./core/vLock";
 import { installVaulty } from "./core/packages";
 import { initializePackage } from "./core/init-package";
+import { vaultyInfo } from "./core/info";
 
 export async function vaultyInit(isPackage: boolean = false) {
   isPackage ? await initializePackage() : initialize();
@@ -22,3 +23,5 @@ export async function vaultyUpdate(onlyPackage?: string, onlyScope?: string) {
 export async function vaultyInstall() {
   await installVaulty();
 }
+
+export { vaultyInfo };
