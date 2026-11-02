@@ -1,5 +1,8 @@
 import { vaultyUpdate } from "../../vaulty";
 import { cmd } from "../cmd";
+import { packageScopes } from "../../core/scopes";
+
+const scopeList = packageScopes.join(", ");
 
 export default {
   command: "update [package]",
@@ -12,8 +15,7 @@ export default {
       })
       .option("scope", {
         alias: "s",
-        describe:
-          "Scope to update (dependencies, server-dependencies, client-dependencies, dev-dependencies)",
+        describe: `Scope to update (${scopeList})`,
         type: "string",
       }),
   handler: cmd(async (argv) => {
